@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeFi Yield Aggregator — GenLayer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0f; color: #e0e0e0; }
+.container { max-width: 900px; margin: 0 auto; padding: 20px; }
+.header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid #1a1a2e; margin-bottom: 24px; }
+.header h1 { font-size: 1.4em; color: #10b981; }
+.header .sub { font-size: 11px; color: #666; margin-top: 4px; }
+.btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all .2s; }
+.btn-primary { background: #10b981; color: #0a0a0f; }
+.btn-primary:hover { background: #059669; }
+.btn-outline { background: transparent; border: 1px solid #10b981; color: #10b981; }
+.btn-outline:hover { background: #10b98120; }
+.btn-sm { padding: 6px 14px; font-size: 12px; }
+.card { background: #12121a; border: 1px solid #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+.card h2 { font-size: 1.1em; margin-bottom: 12px; color: #34d399; }
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: 12px; color: #888; margin-bottom: 4px; }
+.form-group input, .form-group select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #1a1a2e; background: #0a0a0f; color: #e0e0e0; font-size: 14px; }
+.form-group input:focus, .form-group select:focus { outline: none; border-color: #10b981; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.stat { background: #12121a; border: 1px solid #1a1a2e; border-radius: 10px; padding: 14px; text-align: center; }
+.stat .num { font-size: 1.6em; font-weight: 700; color: #34d399; }
+.stat .label { font-size: 10px; color: #666; margin-top: 4px; }
+.pool-item { padding: 12px; border: 1px solid #1a1a2e; border-radius: 8px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.pool-header { font-weight: 600; }
+.pool-meta { font-size: 12px; color: #666; }
+.risk-tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.risk-LOW { background: #16a34a20; color: #16a34a; }
+.risk-MEDIUM { background: #f59e0b20; color: #f59e0b; }
+.risk-HIGH { background: #dc262620; color: #dc2626; }
+.apy { font-size: 1.4em; font-weight: 700; color: #10b981; }
+.recommendation { padding: 16px; border-radius: 8px; background: #10b98110; border: 1px solid #10b98140; margin-top: 12px; }
+.recommendation h3 { color: #10b981; margin-bottom: 8px; }
+.toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 24px; border-radius: 8px; font-size: 13px; z-index: 999; }
+.toast-success { background: #16a34a; color: white; }
+.toast-error { background: #dc2626; color: white; }
+@media (max-width: 768px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .pool-item { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1>DeFi Yield Aggregator</h1>
+      <div class="sub">Multi-chain yield pools · AI risk assessment · Consensus-recommended strategies</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <a class="explorer-link" href="https://explorer-bradbury.genlayer.com/address/0x0000000000000000000000000000000000000000" target="_blank" style="color:#10b981;font-size:11px;text-decoration:none;">Explorer</a>
+      <button class="btn btn-outline btn-sm" id="connectBtn">Connect Wallet</button>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat"><div class="num" id="statTotal">-</div><div class="label">Pools</div></div>
+    <div class="stat"><div class="num" id="statLow">-</div><div class="label">Low Risk</div></div>
+    <div class="stat"><div class="num" id="statMedium">-</div><div class="label">Medium Risk</div></div>
+    <div class="stat"><div class="num" id="statHigh">-</div><div class="label">High Risk</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Register Yield Pool</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-group"><label>Chain</label><select id="chain"><option>Ethereum</option><option>BSC</option><option>Polygon</option><option>Arbitrum</option><option>Optimism</option><option>Avalanche</option><option>Solana</option><option>Base</option></select></div>
+      <div class="form-group"><label>Protocol</label><input id="protocol" placeholder="e.g. Aave, Compound"></div>
+      <div class="form-group"><label>Asset</label><input id="asset" placeholder="e.g. USDC, ETH"></div>
+      <div class="form-group"><label>APY Source URL</label><input id="apyUrl" placeholder="https://..."></div>
+      <div class="form-group"><label>TVL Source URL</label><input id="tvlUrl" placeholder="https://..."></div>
+    </div>
+    <button class="btn btn-primary" id="registerBtn">Register Pool</button>
+    <div id="registerStatus" style="margin-top:10px;font-size:13px;"></div>
+  </div>
+
+  <div class="card">
+    <h2>Get Recommendation</h2>
+    <div style="display:flex;gap:10px;align-items:end;">
+      <div class="form-group" style="flex:1;"><label>Risk Tolerance</label>
+        <select id="riskTolerance"><option value="LOW">Low (only LOW-risk pools)</option><option value="MEDIUM">Medium (LOW + MEDIUM)</option><option value="HIGH">High (all pools)</option></select>
+      </div>
+      <button class="btn btn-primary" id="recommendBtn" style="margin-bottom:12px;">Get Best Pool</button>
+    </div>
+    <div id="recommendationResult" class="recommendation" style="display:none;"></div>
+  </div>
+
+  <div class="card">
+    <h2>Yield Pools</h2>
+    <div style="display:flex;gap:10px;margin-bottom:16px;">
+      <button class="btn btn-outline btn-sm" id="refreshBtn">Refresh All Data</button>
+      <button class="btn btn-outline btn-sm" id="loadBtn">Reload List</button>
+    </div>
+    <div id="poolsList" style="color:#666;">Loading...</div>
+  </div>
+</div>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/genlayer-js@1.1.8/+esm';
+
+const CONTRACT = '0x0000000000000000000000000000000000000000';
+
+const readClient = createClient({
+  chain: { id: 2365, name: 'Bradbury', rpcUrls: { default: { http: ['https://rpc-bradbury.genlayer.com'] } }, nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 } }
+});
+
+let writeClient = null;
+let account = null;
+
+async function connectWallet() {
+  if (!window.ethereum) throw new Error('Install MetaMask');
+  await window.ethereum.request({ method: 'eth_requestAccounts' });
+  const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+  account = accounts[0];
+  writeClient = createClient({
+    chain: { id: 2365, name: 'Bradbury', rpcUrls: { default: { http: ['https://rpc-bradbury.genlayer.com'] } }, nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 } },
+    account: account,
+    provider: window.ethereum
+  });
+  await writeClient.connect('testnetBradbury');
+  return account;
+}
+
+document.getElementById('connectBtn').onclick = async () => {
+  try {
+    const addr = await connectWallet();
+    document.getElementById('connectBtn').textContent = addr.slice(0,6)+'...'+addr.slice(-4);
+    document.getElementById('connectBtn').className = 'btn btn-primary btn-sm';
+    toast('Wallet connected!', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+};
+
+async function readContract(method, args) {
+  return await readClient.readContract({ address: CONTRACT, functionName: method, args: args });
+}
+
+async function writeContract(method, args) {
+  if (!writeClient) await connectWallet();
+  const txHash = await writeClient.writeContract({ address: CONTRACT, functionName: method, args: args });
+  await writeClient.waitForTransactionReceipt({ hash: txHash, status: 'ACCEPTED' });
+  return txHash;
+}
+
+async function loadStats() {
+  try {
+    const s = await readContract('get_stats', []);
+    document.getElementById('statTotal').textContent = s.total_pools ?? 0;
+    const rd = s.risk_distribution ?? {};
+    document.getElementById('statLow').textContent = rd.LOW ?? 0;
+    document.getElementById('statMedium').textContent = rd.MEDIUM ?? 0;
+    document.getElementById('statHigh').textContent = rd.HIGH ?? 0;
+  } catch(e) { console.log(e); }
+}
+
+async function loadPools() {
+  const el = document.getElementById('poolsList');
+  el.textContent = 'Loading...';
+  try {
+    const pools = await readContract('list_pools', []);
+    const entries = Object.entries(pools);
+    if (entries.length === 0) { el.innerHTML = '<span style="color:#666">No pools registered yet.</span>'; return; }
+    el.innerHTML = entries.map(([id, p]) =>
+      `<div class="pool-item">
+        <div>
+          <div class="pool-header">${p.protocol} — ${p.asset}</div>
+          <div class="pool-meta">${p.chain} · TVL: ${p.tvl}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="apy">${p.apy}</div>
+          <span class="risk-tag risk-${p.risk_level}">${p.risk_level || 'N/A'}</span>
+          <div class="pool-meta">Score: ${p.risk_score || '-'}</div>
+        </div>
+      </div>`
+    ).join('');
+  } catch(e) { el.textContent = 'Could not load pools: ' + e.message; }
+}
+
+document.getElementById('registerBtn').onclick = async () => {
+  const chain = document.getElementById('chain').value;
+  const protocol = document.getElementById('protocol').value.trim();
+  const asset = document.getElementById('asset').value.trim();
+  const apyUrl = document.getElementById('apyUrl').value.trim();
+  const tvlUrl = document.getElementById('tvlUrl').value.trim();
+  if (!protocol || !asset || !apyUrl || !tvlUrl) return toast('Fill all fields', 'error');
+  try {
+    const hash = await writeContract('register_pool', [chain, protocol, asset, apyUrl, tvlUrl]);
+    document.getElementById('registerStatus').innerHTML = `<span style="color:#16a34a;">Pool registered! <a href="https://explorer-bradbury.genlayer.com/tx/${hash}" target="_blank" style="color:#10b981;font-size:11px;">${hash.slice(0,10)}...</a></span>`;
+    toast('Pool registered!', 'success');
+    loadStats();
+    loadPools();
+  } catch(e) { toast(e.message, 'error'); }
+};
+
+document.getElementById('recommendBtn').onclick = async () => {
+  const tolerance = document.getElementById('riskTolerance').value;
+  try {
+    const rec = await readContract('get_recommendation', [tolerance]);
+    const el = document.getElementById('recommendationResult');
+    if (rec.error) {
+      el.style.display = 'block';
+      el.innerHTML = `<div style="color:#dc2626;">${rec.error}</div>`;
+      return;
+    }
+    el.style.display = 'block';
+    el.innerHTML = `
+      <h3>Best Pool for ${tolerance}-Risk Tolerance</h3>
+      <div><strong>${rec.protocol} — ${rec.asset}</strong> on ${rec.chain}</div>
+      <div style="font-size:1.6em;font-weight:700;color:#10b981;margin:8px 0;">${rec.apy} APY</div>
+      <div>TVL: ${rec.tvl} · Risk: <span class="risk-tag risk-${rec.risk_level}">${rec.risk_level}</span> (Score: ${rec.risk_score})</div>
+    `;
+  } catch(e) { toast(e.message, 'error'); }
+};
+
+document.getElementById('refreshBtn').onclick = async () => {
+  try {
+    toast('Updating all pools... (this may take a moment)', 'success');
+    await writeContract('update_all_pools', []);
+    toast('All pools updated!', 'success');
+    loadStats();
+    loadPools();
+  } catch(e) { toast(e.message, 'error'); }
+};
+
+document.getElementById('loadBtn').onclick = async () => {
+  await loadStats();
+  await loadPools();
+};
+
+function toast(msg, type) {
+  const t = document.createElement('div');
+  t.className = 'toast toast-'+type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 5000);
+}
+
+loadStats();
+loadPools();
+</script>
+</body>
+</html>
