@@ -51,7 +51,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       <div class="sub">Multi-chain yield pools · AI risk assessment · Consensus-recommended strategies</div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
-      <a class="explorer-link" href="https://explorer-bradbury.genlayer.com/address/0xd811a7563311a8d0142cEE2B00EF40178E26ACa8" target="_blank" style="color:#10b981;font-size:11px;text-decoration:none;">Explorer</a>
+      <a href="https://explorer-bradbury.genlayer.com/address/0xd811a7563311a8d0142cEE2B00EF40178E26ACa8" target="_blank" style="color:#10b981;font-size:11px;text-decoration:none;">Explorer</a>
       <button class="btn btn-outline btn-sm" id="connectBtn">Connect Wallet</button>
     </div>
   </div>
@@ -109,6 +109,12 @@ const readClient = createClient({
 let writeClient = null;
 let account = null;
 
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = String(str ?? '');
+  return div.innerHTML;
+}
+
 async function connectWallet() {
   if (!window.ethereum) throw new Error('Install MetaMask');
   await window.ethereum.request({ method: 'eth_requestAccounts' });
@@ -143,6 +149,14 @@ async function writeContract(method, args) {
   return txHash;
 }
 
+function parseRecommendation(raw) {
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch(e) {}
+  return null;
+}
+
 async function loadStats() {
   try {
     const s = await readContract('get_stats', []);
@@ -160,20 +174,43 @@ async function loadPools() {
   try {
     const pools = await readContract('list_pools', []);
     const entries = Object.entries(pools);
-    if (entries.length === 0) { el.innerHTML = '<span style="color:#666">No pools registered yet.</span>'; return; }
-    el.innerHTML = entries.map(([id, p]) =>
-      `<div class="pool-item">
-        <div>
-          <div class="pool-header">${p.protocol} — ${p.asset}</div>
-          <div class="pool-meta">${p.chain} · TVL: ${p.tvl}</div>
-        </div>
-        <div style="text-align:right;">
-          <div class="apy">${p.apy}</div>
-          <span class="risk-tag risk-${p.risk_level}">${p.risk_level || 'N/A'}</span>
-          <div class="pool-meta">Score: ${p.risk_score || '-'}</div>
-        </div>
-      </div>`
-    ).join('');
+    if (entries.length === 0) { el.textContent = 'No pools registered yet.'; return; }
+    const fragment = document.createDocumentFragment();
+    for (const [id, p] of entries) {
+      const item = document.createElement('div');
+      item.className = 'pool-item';
+
+      const left = document.createElement('div');
+      const header = document.createElement('div');
+      header.className = 'pool-header';
+      header.textContent = `${p.protocol} — ${p.asset}`;
+      const meta = document.createElement('div');
+      meta.className = 'pool-meta';
+      meta.textContent = `${p.chain} · TVL: ${p.tvl}`;
+      left.appendChild(header);
+      left.appendChild(meta);
+
+      const right = document.createElement('div');
+      right.style.textAlign = 'right';
+      const apyDiv = document.createElement('div');
+      apyDiv.className = 'apy';
+      apyDiv.textContent = p.apy || '-';
+      const riskSpan = document.createElement('span');
+      riskSpan.className = `risk-tag risk-${p.risk_level || 'HIGH'}`;
+      riskSpan.textContent = p.risk_level || 'N/A';
+      const scoreDiv = document.createElement('div');
+      scoreDiv.className = 'pool-meta';
+      scoreDiv.textContent = `Score: ${p.risk_score || '-'}`;
+      right.appendChild(apyDiv);
+      right.appendChild(riskSpan);
+      right.appendChild(scoreDiv);
+
+      item.appendChild(left);
+      item.appendChild(right);
+      fragment.appendChild(item);
+    }
+    el.textContent = '';
+    el.appendChild(fragment);
   } catch(e) { el.textContent = 'Could not load pools: ' + e.message; }
 }
 
@@ -186,7 +223,18 @@ document.getElementById('registerBtn').onclick = async () => {
   if (!protocol || !asset || !apyUrl || !tvlUrl) return toast('Fill all fields', 'error');
   try {
     const hash = await writeContract('register_pool', [chain, protocol, asset, apyUrl, tvlUrl]);
-    document.getElementById('registerStatus').innerHTML = `<span style="color:#16a34a;">Pool registered! <a href="https://explorer-bradbury.genlayer.com/tx/${hash}" target="_blank" style="color:#10b981;font-size:11px;">${hash.slice(0,10)}...</a></span>`;
+    const status = document.getElementById('registerStatus');
+    status.textContent = '';
+    const span = document.createElement('span');
+    span.style.color = '#16a34a';
+    span.textContent = 'Pool registered! ';
+    const link = document.createElement('a');
+    link.href = `https://explorer-bradbury.genlayer.com/tx/${hash}`;
+    link.target = '_blank';
+    link.style.cssText = 'color:#10b981;font-size:11px;';
+    link.textContent = hash.slice(0,10) + '...';
+    status.appendChild(span);
+    status.appendChild(link);
     toast('Pool registered!', 'success');
     loadStats();
     loadPools();
@@ -195,21 +243,43 @@ document.getElementById('registerBtn').onclick = async () => {
 
 document.getElementById('recommendBtn').onclick = async () => {
   const tolerance = document.getElementById('riskTolerance').value;
+  const el = document.getElementById('recommendationResult');
   try {
-    const rec = await readContract('get_recommendation', [tolerance]);
-    const el = document.getElementById('recommendationResult');
+    const raw = await readContract('get_recommendation', [tolerance]);
+    const rec = parseRecommendation(raw);
+    if (!rec) { el.style.display = 'block'; el.textContent = 'Invalid response from contract.'; return; }
     if (rec.error) {
       el.style.display = 'block';
-      el.innerHTML = `<div style="color:#dc2626;">${rec.error}</div>`;
+      el.textContent = rec.error;
       return;
     }
     el.style.display = 'block';
-    el.innerHTML = `
-      <h3>Best Pool for ${tolerance}-Risk Tolerance</h3>
-      <div><strong>${rec.protocol} — ${rec.asset}</strong> on ${rec.chain}</div>
-      <div style="font-size:1.6em;font-weight:700;color:#10b981;margin:8px 0;">${rec.apy} APY</div>
-      <div>TVL: ${rec.tvl} · Risk: <span class="risk-tag risk-${rec.risk_level}">${rec.risk_level}</span> (Score: ${rec.risk_score})</div>
-    `;
+    el.textContent = '';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = `Best Pool for ${tolerance}-Risk Tolerance`;
+    el.appendChild(h3);
+
+    const info = document.createElement('div');
+    const strong = document.createElement('strong');
+    strong.textContent = `${rec.protocol || ''} — ${rec.asset || ''}`;
+    info.appendChild(strong);
+    info.appendChild(document.createTextNode(` on ${rec.chain || ''}`));
+    el.appendChild(info);
+
+    const apyDiv = document.createElement('div');
+    apyDiv.style.cssText = 'font-size:1.6em;font-weight:700;color:#10b981;margin:8px 0;';
+    apyDiv.textContent = `${rec.apy || '-'} APY`;
+    el.appendChild(apyDiv);
+
+    const detail = document.createElement('div');
+    detail.textContent = `TVL: ${rec.tvl || '-'} · Risk: `;
+    const riskSpan = document.createElement('span');
+    riskSpan.className = `risk-tag risk-${rec.risk_level || 'HIGH'}`;
+    riskSpan.textContent = rec.risk_level || 'N/A';
+    detail.appendChild(riskSpan);
+    detail.appendChild(document.createTextNode(` (Score: ${rec.risk_score || '-'})`));
+    el.appendChild(detail);
   } catch(e) { toast(e.message, 'error'); }
 };
 

@@ -163,3 +163,71 @@ def test_stats(aggregator):
     s = c.get_stats()
     assert s["total_pools"] == 1
     assert s["risk_distribution"]["LOW"] == 1
+
+
+# ---------- recommendation flow ----------
+
+def test_recommendation_full_flow(aggregator):
+    vm, c = aggregator
+    c.register_pool(CHAIN, PROTOCOL, ASSET, APY_URL, TVL_URL)
+    c.register_pool("BSC", "Venus", "BNB", "https://x.com/apy2", "https://x.com/tvl2")
+    c.update_pool("1")
+    vm.clear_mocks()
+    vm.mock_llm(LLM_PATTERN, json.dumps({
+        "apy": "8.0%",
+        "tvl": "5000000000",
+        "risk_level": "LOW",
+        "risk_score": 85,
+        "summary": "Venus BNB is a stable low-risk pool.",
+    }))
+    with_pool_data(vm)
+    c.update_pool("2")
+
+    rec = json.loads(c.get_recommendation("LOW"))
+    assert rec["pool_id"] is not None
+    assert rec["risk_level"] == "LOW"
+    assert rec["protocol"] is not None
+    assert rec["asset"] is not None
+    assert rec["apy"] is not None
+
+
+# ---------- malicious pool text ----------
+
+def test_malicious_pool_name_stored_safely(aggregator):
+    vm, c = aggregator
+    malicious_protocol = '<script>alert("xss")</script>'
+    malicious_asset = 'USDC"><img src=x onerror=alert(1)>'
+    c.register_pool(CHAIN, malicious_protocol, malicious_asset, APY_URL, TVL_URL)
+    p = _pool(c, "1")
+    assert p["protocol"] == malicious_protocol
+    assert p["asset"] == malicious_asset
+    # The contract stores raw strings; frontend must escape before rendering.
+
+
+def test_malicious_pool_in_recommendation(aggregator):
+    vm, c = aggregator
+    vm.clear_mocks()
+    vm.mock_llm(LLM_PATTERN, json.dumps({
+        "apy": "99.0%",
+        "tvl": "1000000",
+        "risk_level": "LOW",
+        "risk_score": 90,
+        "summary": "Definitely safe. <script>alert('xss')</script>",
+    }))
+    with_pool_data(vm)
+    c.register_pool(CHAIN, '<b>Bold</b>', 'USDC<img onerror=alert(1)>', APY_URL, TVL_URL)
+    c.update_pool("1")
+    rec = json.loads(c.get_recommendation("LOW"))
+    assert rec["pool_id"] is not None
+    assert rec["protocol"] == '<b>Bold</b>'
+    assert "img" in rec["asset"]
+    # Frontend must escape these values before rendering.
+
+
+def test_malicious_pool_in_stats(aggregator):
+    vm, c = aggregator
+    c.register_pool(CHAIN, '<script>alert(1)</script>', 'ETH', APY_URL, TVL_URL)
+    c.update_pool("1")
+    s = c.get_stats()
+    assert s["total_pools"] == 1
+    # Contract handles raw strings safely; frontend must escape.
